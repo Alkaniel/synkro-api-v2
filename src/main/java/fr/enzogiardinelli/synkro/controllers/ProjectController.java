@@ -3,6 +3,9 @@ package fr.enzogiardinelli.synkro.controllers;
 import fr.enzogiardinelli.synkro.dtos.projects.ProjectMemberRequest;
 import fr.enzogiardinelli.synkro.dtos.projects.ProjectRequest;
 import fr.enzogiardinelli.synkro.dtos.projects.TransferOwnershipRequest;
+import fr.enzogiardinelli.synkro.dtos.projects.response.ParticipantResponse;
+import fr.enzogiardinelli.synkro.dtos.projects.response.ProjectDetailResponse;
+import fr.enzogiardinelli.synkro.dtos.projects.response.ProjectResponse;
 import fr.enzogiardinelli.synkro.entities.projects.Project;
 import fr.enzogiardinelli.synkro.entities.projects.ProjectParticipant;
 import fr.enzogiardinelli.synkro.entities.projects.ProjectRole;
@@ -11,7 +14,10 @@ import fr.enzogiardinelli.synkro.repositories.ProjectRepository;
 import fr.enzogiardinelli.synkro.repositories.UserRepository;
 import fr.enzogiardinelli.synkro.security.CustomUserDetails;
 import fr.enzogiardinelli.synkro.services.FileStorageService;
+import fr.enzogiardinelli.synkro.services.ProjectService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,163 +28,94 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/projects")
 public class ProjectController {
-    private final ProjectRepository projectRepository;
-    private final FileStorageService fileStorageService;
-    private final UserRepository userRepository;
+    private final ProjectService projectService;
 
-    public ProjectController(ProjectRepository projectRepository, FileStorageService fileStorageService, UserRepository userRepository) {
-        this.projectRepository = projectRepository;
-        this.fileStorageService = fileStorageService;
-        this.userRepository = userRepository;
-    }
-
-    private boolean isGlobalAdmin(CustomUserDetails currentUser) {
-        return currentUser.getAuthorities().stream()
-                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+    public ProjectController(ProjectService projectService) {
+        this.projectService = projectService;
     }
 
     @GetMapping
-    public List<Project> getMyProjects(@AuthenticationPrincipal CustomUserDetails currentUser) {
-        if (isGlobalAdmin(currentUser)) {
-            return projectRepository.findAll();
-        }
-        return projectRepository.findProjetsForUser(currentUser.getUser());
+    public ResponseEntity<List<ProjectResponse>> getMyProjects(@AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.getMyProjects(currentUser));
     }
 
     @PostMapping
-    public String createProject(@RequestBody @Valid ProjectRequest request, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = new Project();
-        project.setName(request.getName());
-        project.setDescription(request.getDescription());
-        project.setOwner(currentUser.getUser());
-
-        ProjectParticipant ownerParticipant = new ProjectParticipant();
-        ownerParticipant.setProject(project);
-        ownerParticipant.setUser(currentUser.getUser());
-        ownerParticipant.setProjectRole(ProjectRole.OWNER);
-
-        project.getParticipants().add(ownerParticipant);
-        projectRepository.save(project);
-
-        return "Project '" + project.getName() + "' created successfully !";
+    public ResponseEntity<ProjectResponse> createProject(
+            @RequestBody @Valid ProjectRequest request,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        ProjectResponse created = projectService.createProject(request, currentUser);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @GetMapping("/{id}")
-    public Project getProjectDetails(@PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = projectRepository.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
+    public ResponseEntity<ProjectDetailResponse> getProjectDetails(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.getProjectDetails(id, currentUser));
+    }
 
-        if (isGlobalAdmin(currentUser)) return project;
-
-        boolean isMember = project.getParticipants().stream()
-                .anyMatch(p -> p.getUser().getId().equals(currentUser.getUser().getId()));
-
-        if (!isMember) throw new RuntimeException("Unauthorized");
-
-        return project;
+    @PutMapping("/{id}")
+    public ResponseEntity<ProjectResponse> updateProject(
+            @PathVariable UUID id,
+            @RequestBody @Valid ProjectRequest request,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.updateProject(id, request, currentUser));
     }
 
     @DeleteMapping("/{id}")
-    public String deleteProject(@PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = projectRepository.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
+    public ResponseEntity<Void> deleteProject(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        projectService.deleteProject(id, currentUser);
+        return ResponseEntity.noContent().build();
+    }
 
-        if (!project.getOwner().getId().equals(currentUser.getUser().getId()) && !isGlobalAdmin(currentUser)) {
-            throw new RuntimeException("Unauthorized");
-        }
+    @PatchMapping("/{id}/transfer")
+    public ResponseEntity<ProjectDetailResponse> transferOwnership(
+            @PathVariable UUID id,
+            @RequestBody @Valid TransferOwnershipRequest request,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.transferOwnership(id, request, currentUser));
+    }
 
-        projectRepository.delete(project);
-        return "Project deleted successfully !";
+    @PostMapping("/{id}/avatar")
+    public ResponseEntity<ProjectResponse> uploadAvatar(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.uploadAvatar(id, file, currentUser));
     }
 
     @GetMapping("/{id}/members")
-    public List<ProjectParticipant> getProjectMembers(@PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = projectRepository.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
-
-        if (!isGlobalAdmin(currentUser)) {
-            boolean isMember = project.getParticipants().stream()
-                    .anyMatch(p -> p.getUser().getId().equals(currentUser.getUser().getId()));
-
-            if (!isMember) throw new RuntimeException("Unauthorized : You must be a member to see the team");
-        }
-
-        return project.getParticipants().stream().toList();
+    public ResponseEntity<List<ParticipantResponse>> getProjectMembers(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.getProjectMembers(id, currentUser));
     }
 
     @PostMapping("/{id}/members")
-    public String addMember(@PathVariable UUID id, @RequestBody @Valid ProjectMemberRequest request, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = projectRepository.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
-
-        if (!isGlobalAdmin(currentUser)) {
-            ProjectParticipant currentParticipant = project.getParticipants().stream()
-                    .filter(p -> p.getUser().getId().equals(currentUser.getUser().getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new RuntimeException("Unauthorized"));
-
-            if (currentParticipant.getProjectRole() != ProjectRole.OWNER && currentParticipant.getProjectRole() != ProjectRole.EDITOR) {
-                throw new RuntimeException("Unauthorized : Only OWNER or EDITOR can add members");
-            }
-        }
-
-        User userToAdd = userRepository.findByEmail(request.getEmail()).orElseThrow(() -> new RuntimeException("User not found"));
-
-        ProjectParticipant newParticipant = new ProjectParticipant();
-        newParticipant.setProject(project);
-        newParticipant.setUser(userToAdd);
-        newParticipant.setProjectRole(ProjectRole.valueOf(request.getRole().toUpperCase()));
-
-        project.getParticipants().add(newParticipant);
-        projectRepository.save(project);
-
-        return "User added successfully !";
+    public ResponseEntity<ParticipantResponse> addMember(
+            @PathVariable UUID id,
+            @RequestBody @Valid ProjectMemberRequest request,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        ParticipantResponse added = projectService.addMember(id, request, currentUser);
+        return ResponseEntity.status(HttpStatus.CREATED).body(added);
     }
 
     @PatchMapping("/{id}/members")
-    public String updateMemberRole(@PathVariable UUID id, @RequestBody @Valid ProjectMemberRequest request, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = projectRepository.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
-
-        if (!isGlobalAdmin(currentUser)) {
-            ProjectParticipant currentParticipant = project.getParticipants().stream()
-                    .filter(p -> p.getUser().getId().equals(currentUser.getUser().getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new RuntimeException("Unauthorized"));
-
-            if (currentParticipant.getProjectRole() != ProjectRole.OWNER && currentParticipant.getProjectRole() != ProjectRole.EDITOR) {
-                throw new RuntimeException("Unauthorized : Only OWNER or EDITOR can change roles");
-            }
-        }
-
-        ProjectParticipant participantToUpdate = project.getParticipants().stream()
-                .filter(p -> p.getUser().getEmail().equals(request.getEmail()))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Member not found in this project"));
-
-        if (participantToUpdate.getProjectRole() == ProjectRole.OWNER) {
-            throw new RuntimeException("Cannot change the role of the Project Owner");
-        }
-
-        participantToUpdate.setProjectRole(ProjectRole.valueOf(request.getRole().toUpperCase()));
-        projectRepository.save(project);
-
-        return "Role of " + participantToUpdate.getUser().getUsername() + " updated successfully to " + request.getRole();
+    public ResponseEntity<ParticipantResponse> updateMemberRole(
+            @PathVariable UUID id,
+            @RequestBody @Valid ProjectMemberRequest request,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(projectService.updateMemberRole(id, request, currentUser));
     }
 
     @DeleteMapping("/{id}/members/{userId}")
-    public String removeMember(@PathVariable UUID id, @PathVariable UUID userId, @AuthenticationPrincipal CustomUserDetails currentUser) {
-        Project project = projectRepository.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
-
-        if (!isGlobalAdmin(currentUser)) {
-            ProjectParticipant currentParticipant = project.getParticipants().stream()
-                    .filter(p -> p.getUser().getId().equals(currentUser.getUser().getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new RuntimeException("Unauthorized"));
-
-            if (currentParticipant.getProjectRole() != ProjectRole.OWNER && currentParticipant.getProjectRole() != ProjectRole.EDITOR) {
-                throw new RuntimeException("Unauthorized");
-            }
-        }
-
-        project.getParticipants().removeIf(p -> p.getUser().getId().equals(userId) && p.getProjectRole() != ProjectRole.OWNER);
-        projectRepository.save(project);
-
-        return "Member removed successfully !";
+    public ResponseEntity<Void> removeMember(
+            @PathVariable UUID id,
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal CustomUserDetails currentUser) {
+        projectService.removeMember(id, userId, currentUser);
+        return ResponseEntity.noContent().build();
     }
 }
