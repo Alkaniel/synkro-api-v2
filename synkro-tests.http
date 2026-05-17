@@ -153,3 +153,109 @@ Authorization: Bearer {{token_thomas}}
 ### Delete tâche (OWNER) → 204
 DELETE {{host}}/tasks/{{taskId}}
 Authorization: Bearer {{token_enzo}}
+
+### PUT projet (Thomas EDITOR) → 200 + ProjectResponse
+PUT {{host}}/projects/{{projectId}}
+Authorization: Bearer {{token_thomas}}
+Content-Type: application/json
+
+{
+  "name": "Synkro - Edit by Thomas",
+  "description": "Mise à jour par Thomas EDITOR"
+}
+
+### PUT projet (Thomas VIEWER) → 403 si tu l'as rebaissé à VIEWER
+# (selon l'état de ton flow de tests précédent)
+PATCH {{host}}/projects/{{projectId}}/members
+Authorization: Bearer {{token_enzo}}
+Content-Type: application/json
+
+{
+  "email": "thomas@synkro.fr",
+  "role": "EDITOR"
+}
+
+### Transfer ownership Enzo → Thomas → 200 + ProjectDetailResponse
+PATCH {{host}}/projects/{{projectId}}/transfer
+Authorization: Bearer {{token_enzo}}
+Content-Type: application/json
+
+{
+  "newOwnerEmail": "thomas@synkro.fr"
+}
+
+### Vérifier : Thomas est OWNER, Enzo est EDITOR
+GET {{host}}/projects/{{projectId}}/members
+Authorization: Bearer {{token_thomas}}
+
+### Transfer back (Thomas OWNER vers Enzo) pour la suite des tests
+PATCH {{host}}/projects/{{projectId}}/transfer
+Authorization: Bearer {{token_thomas}}
+Content-Type: application/json
+
+{
+  "newOwnerEmail": "enzo@synkro.fr"
+}
+
+### Tentative transfer par Enzo (qui n'est plus OWNER... s'il l'est redevenu, ok) → 403 si pas OWNER
+PATCH {{host}}/projects/{{projectId}}/transfer
+Authorization: Bearer {{token_thomas}}
+Content-Type: application/json
+
+{
+  "newOwnerEmail": "thomas@synkro.fr"
+}
+
+### Upload avatar projet → 200 + ProjectResponse avec avatarUrl
+POST {{host}}/projects/{{projectId}}/avatar
+Authorization: Bearer {{token_enzo}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test-avatar.jpg"
+Content-Type: image/jpeg
+
+< C:\Users\enzog\Desktop\test-avatar.jpg
+--WebAppBoundary--
+
+### Login admin Enzo (avec nouveau rôle)
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "enzo@synkro.fr",
+  "password": "PasswordEnzo1234"
+}
+
+> {% client.global.set("token_enzo_admin", response.body.accessToken); %}
+
+### Lister tous les users (admin) → 200 + [UserResponse]
+GET {{host}}/admin/users
+Authorization: Bearer {{token_enzo_admin}}
+
+### Tentative en non-admin (token Thomas) → 403
+GET {{host}}/admin/users
+Authorization: Bearer {{token_thomas}}
+
+### Changer rôle de Thomas en ADMIN → 200 + UserResponse
+PATCH {{host}}/admin/users/cfc43590-33e8-4f00-a9b0-6a85cd7426cf/role
+Authorization: Bearer {{token_enzo_admin}}
+Content-Type: application/json
+
+{
+  "role": "ADMIN"
+}
+
+###
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+"username": "ToDelete",
+"email": "todelete@synkro.test",
+"password": "TestPassword12345"
+}
+
+####
+DELETE {{host}}/admin/users/4b4b13e6-3651-485b-b05b-8487f539b1ac
+Authorization: Bearer {{token_enzo_admin}}
