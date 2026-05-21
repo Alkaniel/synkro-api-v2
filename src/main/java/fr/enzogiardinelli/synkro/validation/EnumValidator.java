@@ -23,6 +23,6 @@ public class EnumValidator implements ConstraintValidator<ValidEnum, CharSequenc
 
         String sanitizedValue = value.toString().toUpperCase();
 
-        return acceptedValues.contains(sanitizedValue) || acceptedValues.contains("ROLE" + sanitizedValue);
+        return acceptedValues.contains(sanitizedValue) || acceptedValues.contains("ROLE_" + sanitizedValue);
     }
 }

@@ -78,6 +78,10 @@ public class TaskService {
                 .toList();
     }
 
+    public TaskResponse getTaskDetails(UUID taskId) {
+        return TaskResponse.from(findTaskOrThrow(taskId));
+    }
+
     @Transactional
     public TaskResponse createTask(UUID projectId, TaskRequest request, CustomUserDetails currentUser) {
         Project project = findProjectOrThrow(projectId);

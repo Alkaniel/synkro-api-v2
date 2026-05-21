@@ -13,6 +13,7 @@ import fr.enzogiardinelli.synkro.repositories.ProjectRepository;
 import fr.enzogiardinelli.synkro.repositories.TaskRepository;
 import fr.enzogiardinelli.synkro.repositories.UserRepository;
 import fr.enzogiardinelli.synkro.security.CustomUserDetails;
+import fr.enzogiardinelli.synkro.services.RefreshTokenService;
 import fr.enzogiardinelli.synkro.services.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -41,6 +42,11 @@ public class TaskController {
     public ResponseEntity<TaskResponse> createTask(@PathVariable UUID projectId, @RequestBody @Valid TaskRequest request, @AuthenticationPrincipal CustomUserDetails currentUser) {
         TaskResponse created = taskService.createTask(projectId, request, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @GetMapping("/tasks/{id}")
+    public ResponseEntity<TaskResponse> getTaskDetails(@PathVariable UUID id) {
+        return ResponseEntity.ok(taskService.getTaskDetails(id));
     }
 
     @PutMapping("/tasks/{id}")
